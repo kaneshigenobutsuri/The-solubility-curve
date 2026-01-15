@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>溶解度シミュレーター：精密目盛り安定版</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --bg-color: #f1f5f9; --panel-bg: #ffffff; --accent: #2563eb; --accent-hover: #1d4ed8; --precip-color: #ffffff; }
+        body { font-family: sans-serif; background: var(--bg-color); margin: 0; padding: 20px; color: #1e293b; }
+        .container { max-width: 1300px; margin: 0 auto; display: grid; grid-template-columns: 380px 1fr 220px; gap: 20px; }
+        .panel { background: var(--panel-bg); padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h1 { grid-column: 1 / -1; text-align: center; font-size: 1.2rem; margin-top: 0; }
+        
+        .slider-group { margin-bottom: 20px; }
+        label { display: block; font-weight: bold; font-size: 0.85rem; margin-bottom: 8px; }
+        
+        .val-group { float: right; display: flex; align-items: center; gap: 5px; }
+        .val-display { color: var(--accent); font-weight: 800; font-family: monospace; }
+        .unit { color: var(--accent); font-weight: 800; font-size: 0.85rem; }
+        
+        .btn-reset {
+            font-size: 0.75rem; font-weight: bold; padding: 4px 10px;
+            background: var(--accent); color: white;
+            border: none; border-radius: 6px; cursor: pointer;
+            margin-left: 8px;
+            box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+            transition: all 0.2s;
+            display: flex; align-items: center; gap: 4px;
+        }
+        .btn-reset:hover { background: var(--accent-hover); transform: translateY(-1px); }
+
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: var(--accent); }
+        
+        .substance-table { width: 100%; font-size: 0.8rem; border-collapse: collapse; margin-top: 15px; }
+        .substance-table th, .substance-table td { padding: 8px 4px; text-align: center; border-top: 1px solid #f1f5f9; }
+        .color-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+
+        .beaker-container { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .beaker {
+            width: 140px; height: 190px; border: 4px solid #334155; border-top: none;
+            border-bottom-left-radius: 20px; border-bottom-right-radius: 20px;
+            position: relative; background: #fff; overflow: hidden;
+        }
+        .water { position: absolute; bottom: 0; width: 100%; background: rgba(37, 99, 235, 0.15); transition: height 0.3s ease; z-index: 1; }
+        .crystals { 
+            position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
+            width: 70%; background: var(--precip-color); border: 2px solid #333; border-bottom: none;
+            border-top-left-radius: 100px; border-top-right-radius: 100px;
+            transition: height 0.3s ease; z-index: 2; opacity: 0;
+        }
+        
+        .chart-container { position: relative; height: 550px; }
+        .status-box { margin-top: 20px; padding: 15px; background: #f8fafc; border-radius: 8px; border-left: 5px solid var(--accent); line-height: 1.6; }
+        .label-text { font-size: 0.85rem; color: #475569; }
+        .highlight { font-weight: bold; color: var(--accent); font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>溶解度シミュレーター：精密目盛り版</h1>
+
+    <div class="control-panel panel">
+        <div class="slider-group">
+            <label>
+                水（溶媒）の量:
+                <span class="val-group">
+                    <span id="waterVal" class="val-display">100</span>
+                    <span class="unit">g</span>
+                    <button id="btn100" class="btn-reset"><span>↺</span> 100gに戻す</button>
+                </span>
+            </label>
+            <input type="range" id="waterSlider" min="10" max="500" value="100">
+        </div>
+
+        <div class="slider-group">
+            <label>温度: <span class="val-group"><span id="tempVal" class="val-display">20</span><span class="unit">℃</span></span></label>
+            <input type="range" id="tempSlider" min="0" max="100" value="20">
+        </div>
+
+        <div class="slider-group">
+            <label>媒質の量: <span class="val-group"><span id="massVal" class="val-display">50</span><span class="unit">g</span></span></label>
+            <input type="range" id="massSlider" min="0" max="500" value="50">
+        </div>
+
+        <table class="substance-table">
+            <thead>
+                <tr style="font-size: 0.7rem; color: #94a3b8;">
+                    <th>表示</th><th>対象</th><th style="text-align:left">物質名</th>
+                </tr>
+            </thead>
+            <tbody id="substance-list"></tbody>
+        </table>
+
+        <div class="status-box">
+            <div id="target-name" style="font-weight:bold; margin-bottom:8px; font-size:1rem;">-</div>
+            <span class="label-text">水100gに溶ける質量:</span><br>
+            <span id="limit-info" class="highlight">0</span> <span class="label-text">g</span><br>
+            <span id="real-limit-label" class="label-text">水100gに溶ける質量:</span><br>
+            <span id="real-limit" class="highlight">0</span> <span class="label-text">g</span>
+            <hr style="border:0; border-top:1px solid #e2e8f0; margin:10px 0;">
+            <div id="precip-info" style="font-weight:bold;"></div>
+        </div>
+    </div>
+
+    <div class="visual-panel panel">
+        <div class="chart-container">
+            <canvas id="mainChart"></canvas>
+        </div>
+    </div>
+
+    <div class="beaker-panel panel beaker-container">
+        <div class="beaker">
+            <div id="waterEl" class="water"></div>
+            <div id="crystalEl" class="crystals"></div>
+        </div>
+        <div style="margin-top:15px; font-weight:700; font-size:0.9rem; color:#475569;">ビーカー内の様子</div>
+    </div>
+</div>
+
+<script>
+const dataSet = {
+    kno3: { name: "硝酸カリウム", rgb: "220, 38, 38", values: [13.3, 31.6, 63.9, 109.2, 168.8, 244.8] },
+    nacl: { name: "塩化ナトリウム", rgb: "22, 163, 74", values: [35.7, 35.8, 36.3, 37.1, 38.0, 39.0] },
+    alum: { name: "ミョウバン", rgb: "147, 51, 234", values: [5.7, 11.4, 23.8, 57.4, 164.0, 350.0] },
+    sucrose: { name: "ショ糖", rgb: "217, 119, 6", values: [179, 204, 238, 287, 362, 487] }
+};
+const temps = [0, 20, 40, 60, 80, 100];
+
+const tbody = document.getElementById('substance-list');
+Object.keys(dataSet).forEach((key, index) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><input type="checkbox" id="vis-${key}" checked onchange="update()"></td>
+        <td><input type="radio" name="activeSub" value="${key}" ${index===0?'checked':''} onchange="handleRadioChange('${key}')"></td>
+        <td style="text-align:left"><span class="color-dot" style="background:rgb(${dataSet[key].rgb})"></span>${dataSet[key].name}</td>
+    `;
+    tbody.appendChild(tr);
+});
+
+function handleRadioChange(key) {
+    document.getElementById('vis-' + key).checked = true;
+    update();
+}
+
+const ctx = document.getElementById('mainChart').getContext('2d');
+let mainChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        datasets: [
+            ...Object.keys(dataSet).map(key => ({
+                id: key,
+                label: dataSet[key].name,
+                data: temps.map((t, i) => ({x: t, y: dataSet[key].values[i]})),
+                borderColor: `rgba(${dataSet[key].rgb}, 1)`,
+                borderWidth: 2, pointRadius: 0, fill: false, tension: 0.2, hidden: false
+            })),
+            { id: 'bar-dissolved', type: 'bar', backgroundColor: 'rgba(37, 99, 235, 0.6)', borderColor: '#333333', borderWidth: 2, barThickness: 45, grouped: false },
+            { id: 'bar-precip', type: 'bar', backgroundColor: '#ffffff', borderColor: '#333333', borderWidth: 2, barThickness: 45, grouped: false }
+        ]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: {
+            x: { 
+                type: 'linear', min: 0, max: 100,
+                title: { display: true, text: '温度 (℃)' },
+                ticks: {
+                    stepSize: 5, // 補助線の最小単位
+                    callback: function(value) { return value % 10 === 0 ? value : ''; } // 10度おきに数値表示
+                },
+                grid: {
+                    color: (ctx) => (ctx.tick && ctx.tick.value % 10 === 0 ? '#cbd5e1' : '#f3f4f6'), // 主軸(10)は濃い、副軸(5)は薄い
+                    lineWidth: (ctx) => (ctx.tick && ctx.tick.value % 10 === 0 ? 1.5 : 0.8)
+                }
+            },
+            y: { 
+                type: 'linear', min: 0, max: 350,
+                title: { display: true, text: '質量 [g]' },
+                ticks: {
+                    stepSize: 10, // 補助線の最小単位（ご要望の10g刻み）
+                    callback: function(value) { return value % 50 === 0 ? value : ''; } // 50gおきに数値表示
+                },
+                grid: {
+                    color: (ctx) => (ctx.tick && ctx.tick.value % 50 === 0 ? '#cbd5e1' : '#f3f4f6'), // 主軸(50)は濃い、副軸(10)は薄い
+                    lineWidth: (ctx) => (ctx.tick && ctx.tick.value % 50 === 0 ? 1.5 : 0.8)
+                }
+            }
+        }
+    }
+});
+
+function getSolubility(key, t) {
+    const v = dataSet[key].values;
+    if (t <= 0) return v[0]; if (t >= 100) return v[5];
+    for(let i=0; i<temps.length-1; i++) {
+        if(t >= temps[i] && t <= temps[i+1]) {
+            const ratio = (t - temps[i]) / (temps[i+1] - temps[i]);
+            return v[i] + (v[i+1] - v[i]) * ratio;
+        }
+    }
+}
+
+function update() {
+    const water = parseFloat(document.getElementById('waterSlider').value);
+    const temp = parseFloat(document.getElementById('tempSlider').value);
+    const mass = parseFloat(document.getElementById('massSlider').value);
+    const activeKey = document.querySelector('input[name="activeSub"]:checked').value;
+    
+    document.getElementById('waterVal').innerText = water;
+    document.getElementById('tempVal').innerText = Math.round(temp);
+    document.getElementById('massVal').innerText = mass;
+
+    const s100 = getSolubility(activeKey, temp);
+    const realLimit = (s100 * water) / 100;
+    const actualPrecip = Math.max(0, mass - realLimit);
+
+    mainChart.data.datasets.forEach((ds) => {
+        if (dataSet[ds.id]) {
+            const isVisible = document.getElementById('vis-' + ds.id).checked;
+            ds.hidden = !isVisible;
+            ds.borderWidth = (ds.id === activeKey) ? 6 : 2.5;
+            ds.borderColor = `rgba(${dataSet[ds.id].rgb}, ${ds.id === activeKey ? 1 : 0.5})`;
+        }
+        if (ds.id === 'bar-dissolved') {
+            const normInput = (mass / water) * 100;
+            ds.data = [{x: temp, y: [0, Math.min(normInput, s100)]}];
+        }
+        if (ds.id === 'bar-precip') {
+            const normInput = (mass / water) * 100;
+            if (normInput > s100) ds.data = [{x: temp, y: [s100, normInput]}];
+            else ds.data = [];
+        }
+    });
+    mainChart.update('none');
+
+    document.getElementById('target-name').innerText = "実験： " + dataSet[activeKey].name;
+    document.getElementById('limit-info').innerText = s100.toFixed(1);
+    document.getElementById('real-limit-label').innerText = "水" + water + "gに溶ける質量:";
+    document.getElementById('real-limit').innerText = realLimit.toFixed(1);
+    const pInfo = document.getElementById('precip-info');
+    pInfo.innerText = actualPrecip > 0.1 ? `溶け残り: ${actualPrecip.toFixed(1)} g` : "すべて溶けました";
+
+    const waterHeightPx = (water / 500) * 190;
+    document.getElementById('waterEl').style.height = waterHeightPx + "px";
+    let precipHeightPx = Math.min(40, actualPrecip * 0.1); 
+    precipHeightPx = Math.min(precipHeightPx, waterHeightPx);
+    const crystalEl = document.getElementById('crystalEl');
+    if (actualPrecip > 0.1 && waterHeightPx > 0) {
+        crystalEl.style.height = precipHeightPx + "px";
+        crystalEl.style.opacity = "1";
+    } else {
+        crystalEl.style.height = "0px";
+        crystalEl.style.opacity = "0";
+    }
+}
+
+document.getElementById('btn100').addEventListener('click', () => {
+    document.getElementById('waterSlider').value = 100;
+    update();
+});
+
+let dragging = false;
+const canvas = document.getElementById('mainChart');
+function move(e) {
+    if(!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX || (e.touches ? e.touches[0].clientX : 0)) - rect.left;
+    const val = mainChart.scales.x.getValueForPixel(x);
+    if(val >= 0 && val <= 100) { document.getElementById('tempSlider').value = val; update(); }
+}
+canvas.addEventListener('mousedown', () => dragging = true);
+window.addEventListener('mouseup', () => dragging = false);
+canvas.addEventListener('mousemove', move);
+canvas.addEventListener('touchstart', (e) => { dragging = true; move(e); });
+window.addEventListener('touchend', () => dragging = false);
+canvas.addEventListener('touchmove', move);
+
+document.querySelectorAll('input').forEach(el => el.addEventListener('input', update));
+update();
+</script>
+</body>
+</html>
